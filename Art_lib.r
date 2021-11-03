@@ -25,7 +25,7 @@ library(dplyr)
 library(tidyr)
 library(nlstools)
 library(patchwork)
-
+library(takos)
 #+++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°
 # Function for solving the DE modified from takos just for the add of 
 # one coeff (same results as takos, just added for the output to be usable by 
