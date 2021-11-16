@@ -26,6 +26,7 @@ library(tidyr)
 library(nlstools)
 library(patchwork)
 library(takos)
+
 #+++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°
 # Function for solving the DE modified from takos just for the add of 
 # one coeff (same results as takos, just added for the output to be usable by 
@@ -92,7 +93,7 @@ return(my.list)
 }
 
 #+++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°
-# Extend gac addind a few columns derived from gAC does not "change" anything 
+# Extend gac adding a few columns derived from gAC does not "change" anything 
 # from gAC (just multiplication and conversion of units)
 #+++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°
 
@@ -205,7 +206,7 @@ return(my.list)
 #Prepare matrix for regression
 #+++++++°+++++++++°°+++++++++°
 
-sanitizeForReg <- function(set_in,low_lim_safe=5,up_lim_safe=5){
+sanitizeForReg <- function(set_in,low_lim_safe=2,up_lim_safe=2){
 
 for (i in 1:length(set_in)){
 		set_in[[i]]$T.C <- set_in[[i]]$T.C[low_lim_safe:(length(set_in[[i]]$T.C)-up_lim_safe)]
@@ -223,36 +224,6 @@ for (i in 1:length(set_in)){
 		}
 set_sanitized <- set_in
 return(set_sanitized)
-}
-
-#+++++++°+++++++++°°+++++++++°
-# fit all curves in batch
-#+++++++°+++++++++°°+++++++++°
-acfit<- function(y,x,myfun,s_list,...)
- { 	
-	y <- na.omit(y)
-	ynorm <- y/max(y)
-	x <- na.omit(x)
-	x <- x[1:length(ynorm)]
-	dfxy <-  data.frame(x,ynorm)
-	dfxy <- na.omit(dfxy)
-	mod_fit <- nls(ynorm~eval(parse(text=myfun)),start=s_list,data=dfxy,...)
-	my_reg <- list("mod_fit"=mod_fit,"fun"=myfun)
-	return(my_reg)
- }
-
-acfitBatch <- function(curve_set,...)
-{
-mod <- lapply(seq(1,length(curve_set)),
-			function(x) 
-			acfit(curve_set[[x]]$fa,
-			curve_set[[x]]$ri[1:length(curve_set[[x]]$fa)],...)
-			  )
-rate <- lapply(seq(1,length(curve_set)),
-			   function(x) curve_set[[x]]$rate[1]  
-			  )
-batch_fit <- list("mod"=mod,"rate"=rate)
-return(batch_fit)
 }
 
 #+++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°
@@ -273,122 +244,94 @@ my.list <- list("F"=aF,"KAS"=aKAS,"Star"=aStarink,"OFW"=aOFW,"OZ"=aOZ,"Kiss"=aKi
 return(my.list)
 }
 
-create_set_gt <- function(time.s, Ts, TE, AA, E, qq, np, pr, refMod, deg,...) {
+#+++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°
+# Calculates simulated curves one function is just for the ground truth 
+# (just for clarity sake)
+#+++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°
+
+create_set_gt <- function(time.s, Ts, TE, AA, E, qq, np, pr, refMod, deg,amin,amax,...) {
  
 set_gt            <- batchac(time.start=time.s,T0 = Ts, T.end = TE, A = AA, Ea = E, rates = qq, 
 					 co = 1,m = 1, n = 1, K = 0, npoints = np, prec = pr, rmod = refMod,...)
 set_gt 		  	  <- sanitizeForReg(set_gt)
 set_gt_ap         <- peppa(set_gt)
-set_gt_apr        <- tryCatch(peppaRes(set_gt_ap$ap),error = function(e) set_gt_ap$ap)
-dat_gt 			  <- set_gt_apr
+dat_gt 			  <- set_gt_ap$ap
+dat_gt_r         <- set_gt_ap$apr
+dat_gt_r$set         <- refMod
+
+dat_gt$a   <- dat_gt$alfa/100
+dat_gt$fan <- (dat_gt$fa)/max(dat_gt$fa)
+dat_gt$set <- refMod
+dat_gt <- dat_gt[,c("id_cycle","id"):=NULL]
+
+dat_gt_sel <- subset(dat_gt, (a >=amin & a <=amax))
 
 
 mylist=list("set_gt"=set_gt,
-			"dat_gt"=dat_gt)
+			"dat_gt"=dat_gt,
+			"dat_gt_r"=dat_gt_r,
+			"dat_gt_sel"=dat_gt_sel)
 
 return(mylist)
 }
 
-create_set_ictac <- function(time.s, Ts, TE, AA, E, qq, coref, mref, nref, np, pr, deg,...) {
 
+create_set <- function(nameset,time.s, Ts, TE, AA, E, qq, conew, mnew, nnew, np, pr, deg,amin,amax,...) {
 
-set_ictac         <- batchac(time.start=time.s,T0 = Ts, 
+set_set         <- batchac(time.start=time.s,T0 = Ts, 
 							 T.end = TE, A = AA,
 							 Ea = E, rates = qq, 
-							 co = rep(coref,length(qq)),
-							 m = rep(mref,length(qq)),
-							 n = rep(nref,length(qq)) , 
+							 co = rep(conew,length(qq)),
+							 m = rep(mnew,length(qq)),
+							 n = rep(nnew,length(qq)) , 
 							 K = 0, npoints = np, 
 							 prec = pr, rmod = "SB",...)
 					
-set_ictac   	  <- sanitizeForReg(set_ictac)
-set_ictac_ap      <- peppa(set_ictac)
-set_ictac_apr     <- tryCatch(peppaRes(set_ictac_ap$ap),
-					 error = function(e) set_ictac_ap$ap)
+set_set   	    <- sanitizeForReg(set_set)
+set_set_ap      <- peppa(set_set)
+dat_set         <- set_set_ap$ap
+dat_r           <- set_set_ap$ap
 
-dat_ictac         <- set_ictac_apr 
-mylist            <- list("set_ictac"=set_ictac,"dat_ictac"=dat_ictac)
+dat_r$eset <- nameset
 
-return(mylist)
-}
 
-create_set <- function(time.s, Ts, TE, AA, E, qq, co, m, n, np, pr, rmod,...) {
+dat_set$set <- nameset
 
-set             <- batchac(time.start=time.s,
-							T0 = Ts,
-							T.end = TE,
-							A = AA,
-							Ea = E,
-							rates = qq, 
-							co , m , n , 
-							K = 0, npoints = np,
-							prec = pr, rmod = "SB",...)
-					
-set			   	<- sanitizeForReg(set)
-set_ap     		<- peppa(set)
-set_apr     <- tryCatch(peppaRes(set_ap$ap),error = function(e) set_ap$ap)
-dat         <- set_apr 
+dat_set$a <- dat_set$alfa/100
+dat_set$fan <-   (dat_set$fa)/max(dat_set$fa)
+dat_set_sel <- subset(dat_set, (a >=amin & a <=amax))
 
-mylist=list("set"=set,"dat"=dat)
+
+mylist             <- list("set"=set_set,
+						   "dat"=dat_set,
+						   "dat_r"=dat_r,
+						   "dat_sel"=dat_set_sel)
 
 return(mylist)
 }
 
+#+++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°
+# simulate ground truth and ictac curves and then fit them using nlsLM. it can 
+# perform the regression on a set of curves at different rate
+#+++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°
 
-fitKin <- function(time.s, Ts, TE, AA, E, qq, 
-					coref, mref, nref, np, pr, 
-					refMod, mystart,amin,amax,my_step,
-					myptol,
-					myftol,...)
+fitSB  <- function(mat,time.s, Ts, TE, AA, E, qq, np, pr, refMod, mystart,amin,amax,my_step,
+					myptol,myftol,coref,...)
 {
+
+dat_gt_sel=mat
+
 deg <- seq(amin,amax,my_step)
-ictac_set <- create_set_ictac(time.s, Ts, TE, AA,
-							  E, qq, coref, mref, nref, np,
-							  pr, deg,...)
-
-gt_set <- create_set_gt(time.s, Ts, TE, AA,
-						E, qq, np, pr, refMod,
-						deg,...)
-dat_gt     <- gt_set$dat_gt
-EA_gt 	   <- batchtriplet(dat_gt,mydegree=deg)
-dat_gt$a   <- dat_gt$alfa/100
-dat_gt$fan <- (dat_gt$fa)/max(dat_gt$fa)
-dat_gt_sel <- subset(dat_gt, (a >=amin & a <=amax))
-dat_gt_sel <- dat_gt_sel[,c("id_cycle","id"):=NULL]
-
-
-dat_ictac <- ictac_set$dat_ictac
-EA_ictac        <- batchtriplet(dat_ictac,mydegree=deg)
-dat_ictac$a <- dat_ictac$alfa/100
-dat_ictac$fan <-   (dat_ictac$fa)/max(dat_ictac$fa)
-dat_ictac_sel <- subset(dat_ictac, (a >=amin & a <=amax))
-dat_ictac_sel <- dat_ictac_sel[,c("id_cycle","id"):=NULL]
-
-
 free_fun <- function(alpha,co,m,n)(co*(alpha^m*(1-alpha)^n))
 x_fun <- paste0("function(alpha,m,n)(",coref,"*((alpha^m)*(1-alpha)^n))")
 fixed_fun <- eval(parse(text=x_fun))
-
 if (length(mystart) == 3)
-
-#+++++#
-#Depending on the number of parameters given the function choose the
-#simple function or the more complicated one
-#+++++#
 
  {
 
 #+++++#
 #free#
 #+++++#
-
-#+++++#
-#The core of everything here is the non linear square regression, all the parameters can be changed
-#here but are also inherited as input using the ...
-#+++++#
-
-
-
 fits <- dat_gt_sel  %>%   group_by(., rate) %>%   nest() %>%
 	mutate(fit = purrr::map(data, ~ nlsLM(fan ~ free_fun(a, co, m, n),
                                    data = .x,
@@ -401,16 +344,9 @@ fits <- dat_gt_sel  %>%   group_by(., rate) %>%   nest() %>%
 }
 
 else {
-
 #+++++#
 #fixed#
 #+++++#
-
-#+++++#
-#The core of everything here is the non linear square regression, all the parameters can be changed
-#here but are also inherited as input using the ...
-#+++++#
-
 fits <- dat_gt_sel  %>%   group_by(., rate) %>%   nest() %>%
 	mutate(fit = purrr::map(data, ~ nlsLM(fan ~ fixed_fun(a, m, n),
                                    data = .x,
@@ -431,15 +367,13 @@ params <- fits %>%   mutate(., p = map(fit, tidy)) %>%   unnest(p)
 
 if (length(mystart) == 3)
  {
-
-	CI <- fits %>%   mutate(., cis = map(fit, confint2), cis = map(cis, data.frame)) %>%   unnest(cis) %>%   rename(., conf.low = X2.5.., conf.high = X97.5..) %>%   group_by(., rate) %>%   mutate(., term = c('co', 'm', 'n')) %>% 
-      ungroup() 
+  CI <- fits %>%   mutate(., cis = map(fit, confint2), cis = map(cis, data.frame)) %>%   unnest(cis) %>%   rename(., conf.low = X2.5.., conf.high = X97.5..) %>%   group_by(., rate) %>%   mutate(., term = c('co', 'm', 'n')) %>% 
+  ungroup() 
 }
 else
  {
-
 	CI <- fits %>%   mutate(., cis = map(fit, confint2), cis = map(cis, data.frame)) %>%   unnest(cis) %>%   rename(., conf.low = X2.5.., conf.high = X97.5..) %>%   group_by(., rate) %>%   mutate(., term = c('m', 'n')) %>% 
-      ungroup() 
+    ungroup() 
 }
 # merge parameters and CI estimates
 params <- merge(params, CI, by = intersect(names(params), names(CI)))
@@ -454,121 +388,293 @@ partab <- dtPar[, ..colstab]
 partab <- partab[order(partab$rate),]
 
 if (length(mystart) == 3)
- {
-  dtco <- dtpar[term=="co"]
- }
+	 {
+	  dtco <- dtpar[term=="co"]
+	 }
 
 dtm  <- dtpar[term=="m"]
 dtn  <- dtpar[term=="n"]
 
 if (length(mystart) == 3)
- {
-	co_fit <- dtco$estimate
- }
+	 {
+	 co_fit <- dtco$estimate
+	 }
  else
- {co_fit <- rep(coref,length(qq))
- }
+	 {
+	 co_fit <- rep(coref,length(qq))
+	 }
 m_fit  <- dtm$estimate
 n_fit  <- dtn$estimate
 
-test <- create_set(time.s, Ts, TE, AA, E, qq, co = co_fit, m=m_fit,  n_fit, np, pr,...) 
+test <- create_set("test",time.s, Ts, TE, AA, E, qq, conew = co_fit, mnew = m_fit, nnew = n_fit, np, pr,amin = amin,amax = amax,...) 
 
 dat_fit <- test$dat
 dat_fit$a <- dat_fit$alfa/100
 dat_fit$fan <-   (dat_fit$fa)/max(dat_fit$fa)
-dat_fit_sel <- subset(dat_fit, (a >=amin & a <=amax))
+
 dat_fit_sel <- dat_fit[,c("id_cycle","id"):=NULL]
 dat_fit_sel$set <- "fit"
-dat_gt$set <- "reference"
+dat_gt_sel$set <- "reference"
 
 dat_fit_sel$id_cycle <- dat_fit$rate
 EA_free        <- batchtriplet(dat_fit_sel,mydegree=deg)
 
-mylist <- list("dat_gt"=dat_gt,
-			   "dat_gt_sel"=dat_gt_sel,
-			   "dat_ictac"=dat_ictac,
-			   "dat_ictac_sel"=dat_ictac_sel,
-			   "dat_fit"=dat_fit,
-			   "dat_fit_sel"=dat_fit_sel,
+mylist <- list("dat_fit_sel"=dat_fit_sel,
 			   "parameters_free"=partab,
-			   "EA_gt"=EA_gt,
-			   "EA_ictac"=EA_ictac,
 			   "EA"=EA_free,
 			   "params"=params,
 			   "preds"=preds)
 }
 
+#+++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°
 
-simmy <- function(time.s=0, Ts=0, TE=500,
-				  AA=10^6, E=100000, qq=c(1,2,5,10,20,50), 
-				  coref=co_a2, mref=m_a2, nref=n_a2, 
-				  np=10^3, pr=10^-2, 
-				  refMod="A2",
-				  mystart=list(co = 1,  m = 0.5 , n=0.5),
-				  amin=0.05,amax=0.95,my_step=0.05,
-			      myptol=10^-64,
-				  myftol=10^-64,myset="A2",mytitle="A2set1",...) {
+sreg <- function(nameset="set",time_start,
+							   Temp_start,
+							   Temp_End,
+							   A,Ea,rate,
+							   number_of_points,
+							   precision_start,
+							   referenceMod,
+							   alfa_degree,
+							   alfa_min,
+							   alfa_max,
+							   co_reference,
+							   m_reference,
+							   n_reference,
+							   fitted_co,fitted_m,fitted_n,...){
+#++++++++++++++++++++++++++++
+gt_set <- create_set_gt(time.s=time_start,
+						Ts=Temp_start,
+						TE=Temp_End,
+						AA=A,	E=Ea, qq=rate,
+						np=number_of_points,
+						pr=precision_start,
+						refMod=referenceMod,
+						deg=alfa_degree,
+						amin=alfa_min,
+						amax=alfa_max,...)
+ictac_set <- create_set("ictac",
+						 time.s=time_start,
+						 Ts=Temp_start,
+						 TE=Temp_End,
+						 AA=A,
+						 E=Ea,
+						 qq=rate,
+						 conew=co_reference,
+						 mnew=m_reference,
+						 nnew=n_reference,
+						 np=number_of_points,
+						 pr=precision_start,
+						 deg=alfa_degree,
+						 amin=alfa_min,
+						 amax=alfa_max,...)
+#++++++++++++++++++++++++++++
 
-set <- fitKin (time.s=time.s, Ts=Ts, TE=TE,
-				  AA=AA, E=E, qq=qq, 
-				  coref=coref, mref=mref, nref=nref, 
-				  np=np, pr=pr, 
-				  refMod=refMod,
-				  mystart=mystart,
-				  amin=amin,amax=amax,my_step=my_step,
-			      myptol=myptol,
-				  myftol=myftol,...)
-  
-set_EA_table   <- fitEA(set)
 
-set_pMat 	 <-  prepMatPlot(set)
-set_Plot     <-  ploMat(set_pMat)
-set_pEA      <-  ploEA(set)
-set_Coeff	 <-  plotCoeff(set)
-set_pMet     <-  plotMet(set_EA_table)
-patch1 		 <-  set_Plot$pheat / set_Plot$pfa /  set_Plot$pfan + plot_annotation(
-					title = myset,
-					subtitle = 'no resample',
-					)
-ggsave(paste0(myset,"p1.png"), width =29, height = 21, units = "cm",dpi=400)
+gt_set$dat_gt$id_cycle <- gt_set$dat_gt$rate
+EA_gt_t      <- batchtriplet(gt_set$dat_gt,
+							 mydegree=alfa_degree,...)
+EA_gt		 <- EA_gt_t$EA
+ictac_set$dat_gt$id_cycle <- ictac_set$dat_gt$rate
 
-patch2 <- set_Plot$prheat / set_Plot$prfa /  set_Plot$prfan + plot_annotation(
-  title = myset,
-  subtitle = 'resample',
-  )
-
-ggsave(paste0(myset,"p2.png"), width =29, height = 21, units = "cm",dpi=400)
-
-patch3 <- set_Plot$prdheat / set_Plot$prdfa /  set_Plot$prdfan + plot_annotation(
-		  title = myset,
-		  subtitle = 'resample')
-
-ggsave(paste0(myset,"p3.png"), width =29, height = 21, units = "cm",dpi=400)
-
-p41 <- set_pEA$pFri + theme(legend.position="none")
-p42 <- set_pEA$pS   + theme(legend.position="none")
-p43 <- set_pEA$pKAS + theme(legend.position="none")
-p44 <- set_pEA$pKissinger
-
-p45 <- set_pEA$pDFri + theme(legend.position="none")
-p46 <- set_pEA$pDS   + theme(legend.position="none")
-p47 <- set_pEA$pDKAS + theme(legend.position="none")
-p48 <- set_pEA$pDKissinger
-
-patch4 <- p41 + p42  + p43 + p44 + p45 + p46 + p47 + p48 + plot_layout(ncol = 4) + plot_annotation(
-  title = myset,
-  subtitle = 'free')
-
-ggsave(paste0(myset,"p4.png"), width =32, height = 12, units = "cm",dpi=400)
-
-patch60  <- set_Coeff$p /  set_pMet$p  
-patch6   <-  patch60 + plot_annotation(  title = myset,  subtitle = 'free')
-
-ggsave(paste0(myset,"p6.png"), width =18, height = 16, units = "cm",dpi=400)
-
-mylist <- list("set"=set, "set_EA_table" = set_EA_table)
+EA_ictac_t   <- batchtriplet(ictac_set$dat,
+							 mydegree=alfa_degree,...)
+EA_ictac	 <- EA_ictac_t$EA
+mat <- gt_set$dat_gt_sel
+new_set <- create_set(nameset=nameset,
+					  time.s=time_start,
+					  Ts=Temp_start,
+					  TE=Temp_End,
+					  AA=A,
+					  E=Ea,
+					  qq=rate,
+					  conew=fitted_co,
+					  mnew=fitted_m,
+					  nnew=fitted_n,
+					  np=number_of_points,
+					  pr=precision_start,
+					  deg=alfa_degree,
+					  amin=alfa_min,
+					  amax=alfa_max,...)
+					  
+new_set$dat_sel$id_cycle <- new_set$dat_sel$rate
+EA_newset_t   <- batchtriplet(new_set$dat_sel,
+							  mydegree=alfa_degree,...)
+EA <- EA_newset_t$EA 
+mylist <- list("gt"=gt_set,"ictac"=ictac_set,"new_set" = new_set ,"EA_gt"=EA_gt,"EA_ictac"=EA_ictac,"EA"=EA)
 return(mylist)
 }
+
+
+
+pepper <- function(outreg,nameset="newset"){
+outreg_EA     <- outreg$EA
+outreg_EA_gt     <-  outreg$EA_gt
+outreg_EA_ictac  <-  outreg$EA_ictac
+outreg_EA$reg    <- "new_reg"
+outreg_EA_gt$reg <- "ground_truth"
+outreg_EA_ictac$reg <- "ictac"
+outreg_E  <- rbind(outreg_EA_gt,outreg_EA_ictac,outreg_EA)
+outreg_E$set <- nameset
+
+outreg_E_melt <- melt(outreg_E,id.vars=c("degree","reg","set"))
+
+metrics_ictac         <- fitEA(outreg_EA_gt,outreg_EA_ictac)
+metrics_new_reg       <- fitEA(outreg_EA_gt,outreg_EA)
+metrics_ictac$reg     <- "ictac"
+metrics_new_reg$reg   <- "new_reg"
+outreg_metrics        <- rbind(metrics_ictac,metrics_new_reg)
+outreg_metrics$set    <- nameset
+
+outreg_gt           <-  outreg$gt$dat_gt
+outreg_gt$id        <- outreg_gt$id_cycle
+outreg_ictac        <-  outreg$ictac$dat
+outreg_new_set      <-  outreg$new_set$dat
+outreg_gt$reg       <- "ground_truth"
+outreg_ictac$reg    <- "ictac"
+outreg_new_set$reg  <- "new_reg"
+out <- rbind(outreg_gt,outreg_ictac,outreg_new_set)
+
+pE <- ggplot(outreg_E_melt, aes(col = reg)) +   geom_line(aes(degree, value)) +   facet_wrap(~ variable, scale = 'free_x', ncol = 4)
+pmetrics <- ggplot(A2_metrics, aes(col = reg)) +   geom_point(aes(metrics, value)) +   facet_wrap(~ method, scale = 'free_x', ncol = 4)
+pheat <- ggplot(out, aes(col = reg)) +   geom_line(aes(temperature.s, heat.flow)) +   facet_wrap(~ rate, scale = 'free_x', ncol = 7)
+pfa   <- ggplot(out, aes(col = reg)) +   geom_line(aes(ri, fa)) +   facet_wrap(~ rate, scale = 'free_x', ncol = 7)
+mylist <- list("E"=outreg_E, "E_melt"=outreg_E_melt,"metrics"=outreg_metrics,"dat"=out,"pE"=pE,"pheat"=pheat,"pfa"=pfa)
+return(mylist)
+}
+
+sreg <- function(nameset="set",time_start,
+							   Temp_start,
+							   Temp_End,
+							   A,Ea,rate,
+							   number_of_points,
+							   precision_start,
+							   referenceMod,
+							   alfa_degree,
+							   alfa_min,
+							   alfa_max,
+							   co_reference,
+							   m_reference,
+							   n_reference,
+							   fitted_co,fitted_m,fitted_n,...){
+#++++++++++++++++++++++++++++
+gt_set <- create_set_gt(time.s=time_start,
+						Ts=Temp_start,
+						TE=Temp_End,
+						AA=A,	E=Ea, qq=rate,
+						np=number_of_points,
+						pr=precision_start,
+						refMod=referenceMod,
+						deg=alfa_degree,
+						amin=alfa_min,
+						amax=alfa_max,...)
+ictac_set <- create_set("ictac",
+						 time.s=time_start,
+						 Ts=Temp_start,
+						 TE=Temp_End,
+						 AA=A,
+						 E=Ea,
+						 qq=rate,
+						 conew=co_reference,
+						 mnew=m_reference,
+						 nnew=n_reference,
+						 np=number_of_points,
+						 pr=precision_start,
+						 deg=alfa_degree,
+						 amin=alfa_min,
+						 amax=alfa_max,...)
+#++++++++++++++++++++++++++++
+
+
+gt_set$dat_gt$id_cycle <- gt_set$dat_gt$rate
+EA_gt_t      <- batchtriplet(gt_set$dat_gt,
+							 mydegree=alfa_degree,...)
+EA_gt		 <- EA_gt_t$EA
+ictac_set$dat_gt$id_cycle <- ictac_set$dat_gt$rate
+
+EA_ictac_t   <- batchtriplet(ictac_set$dat,
+							 mydegree=alfa_degree,...)
+EA_ictac	 <- EA_ictac_t$EA
+mat <- gt_set$dat_gt_sel
+new_set <- create_set(nameset=nameset,
+					  time.s=time_start,
+					  Ts=Temp_start,
+					  TE=Temp_End,
+					  AA=A,
+					  E=Ea,
+					  qq=rate,
+					  conew=fitted_co,
+					  mnew=fitted_m,
+					  nnew=fitted_n,
+					  np=number_of_points,
+					  pr=precision_start,
+					  deg=alfa_degree,
+					  amin=alfa_min,
+					  amax=alfa_max,...)
+					  
+new_set$dat_sel$id_cycle <- new_set$dat_sel$rate
+EA_newset_t   <- batchtriplet(new_set$dat_sel,
+							  mydegree=alfa_degree,...)
+EA <- EA_newset_t$EA 
+mylist <- list("gt"=gt_set,"ictac"=ictac_set,"new_set" = new_set ,"EA_gt"=EA_gt,"EA_ictac"=EA_ictac,"EA"=EA)
+return(mylist)
+}
+
+#+++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°
+# simple nls regression with SB method for a single  curve
+#+++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°
+
+
+sfitSB  <- function(nameset="test",mat,time.s, Ts, TE, AA, E, qq, np, pr, refMod, mystart,amin,amax,my_step,coref,...)
+{
+
+deg <- seq(amin,amax,my_step)
+free_fun <- function(a,co,m,n)(co*(a^m*(1-a)^n))
+x_fun <- paste0("function(a,m,n)(",coref,"*((a^m)*(1-a)^n))")
+fixed_fun <- eval(parse(text=x_fun))
+dfxy <- data.frame(mat$a,mat$fan)
+colnames(dfxy)= c("a","fan")
+
+if (length(mystart) == 3)
+
+ {
+
+#+++++#
+#free#
+#+++++#
+
+mod_fit <- nlsLM(fan~free_fun(a,co,m,n),start=mystart,data=dfxy)
+fit_co <- summary(mod_fit)$coeff[1]
+fit_m  <- summary(mod_fit)$coeff[2]
+fit_n  <- summary(mod_fit)$coeff[3]
+colist=list("co"=fit_co,"m"=fit_m,"n"=fit_n)
+test <- create_set(nameset,time.s, Ts, TE, AA, E, qq, conew = fit_co, mnew = fit_m, nnew = fit_n, np, pr,amin = amin,amax = amax,...) 
+
+}
+
+else {
+#+++++#
+#fixed#
+#+++++#
+
+mod_fit <- nlsLM(fan~fixed_fun(a,m,n),start=mystart,data=dfxy)
+fit_m  <- summary(mod_fit)$coeff[2]
+fit_n  <- summary(mod_fit)$coeff[3]
+colistlist("co"=coref,"m"=fit_m,"n"=fit_n)
+test <- create_set(nameset,time.s, Ts, TE, AA, E, qq, conew = coref, mnew = fit_m, nnew = fit_n, np, pr,amin = amin,amax = amax,...) 
+
+}
+
+dat_fit <- test$dat
+mylist <- list("dat_fit"=dat_fit,"coeff"=colist,"mod_fit"=mod_fit)
+}
+
+
+
+#+++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°
+# plot
+#+++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°
+
 
 #++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°
 #++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°
@@ -580,227 +686,88 @@ return(mylist)
 #++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°
 #++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°
 
-fitEA <- function(out,low=0.05,high=0.95){
-gt     <-   out$EA_gt$EA
-gt     <-   subset(gt, (degree >= low & degree <= high))
-test   <-   out$EA$EA
-test   <-   subset(test, (degree >= low & degree <= high))
-ictac  <-   out$EA_ictac$EA
-ictac  <-   subset(ictac, (degree >= low & degree <= high))
+fitEA <- function(EAref,EAout,nameset="out",low=0.05,high=0.95){
 
-R2_ref     <-  c(R2(gt$Friedman,ictac$Friedman),R2(gt$KAS,ictac$KAS),R2(gt$Starink,ictac$Starink))
-R2_test    <-  c(R2(gt$Friedman,test$Friedman) ,R2(gt$KAS,test$KAS), R2(gt$Starink,test$Starink))
-
-RMSE_ref   <- c(RMSE(gt$Friedman,ictac$Friedman),RMSE(gt$KAS,ictac$KAS),RMSE(gt$Starink,ictac$Starink))
-RMSE_test  <- c(RMSE(gt$Friedman,test$Friedman), RMSE(gt$KAS,test$KAS), RMSE(gt$Starink,test$Starink))
-
-MAE_ref   <- c(MAE(gt$Friedman,ictac$Friedman),MAE(gt$KAS,ictac$KAS),MAE(gt$Starink,ictac$Starink))
-MAE_test  <- c(MAE(gt$Friedman,test$Friedman) ,MAE(gt$KAS,test$KAS), MAE(gt$Starink,test$Starink))
+EAref  <-  subset(EAref, (degree >= low & degree <= high))
+EAout  <-  subset(EAout, (degree >= low & degree <= high))
+cR2     <-  c(R2(EAref$Friedman,EAout$Friedman),R2(EAref$KAS,EAout$KAS),R2(EAref$Starink,EAout$Starink))
+cRMSE   <-  c(RMSE(EAref$Friedman,EAout$Friedman),RMSE(EAref$KAS,EAout$KAS),RMSE(EAref$Starink,EAout$Starink))
+cMAE    <-  c(MAE(EAref$Friedman,EAout$Friedman),MAE(EAref$KAS,EAout$KAS),MAE(EAref$Starink,EAout$Starink))
 
 lab_methods <- c("Friedman","KAS","Starink")
-RMSE_test   <- data.frame(RMSE_test,lab_methods)
-RMSE_ref    <- data.frame(RMSE_ref)
 
-MAE_test  <- data.frame(MAE_test,lab_methods)
-MAE_ref   <- data.frame(MAE_ref)
+df_RMSE <- data.frame(cRMSE,lab_methods)
+df_MAE  <- data.frame(cMAE,lab_methods)
+df_R2   <- data.frame(cR2 ,lab_methods)
 
-R2_test  <- data.frame(R2_test ,lab_methods)
-R2_ref   <- data.frame(R2_ref)
+df_R2$set   <- nameset
+df_MAE$set  <- nameset
+df_RMSE$set <- nameset
 
-EA_R2 <- data.frame(R2_ref$R2_ref,R2_test$R2_test)
-colnames(EA_R2) <- c("ictac","fit")
+colnames(df_RMSE) <- c("value","method","metrics")
+colnames(df_MAE) <- c("value","method","metrics")
+colnames(df_R2) <- c("value","method","metrics")
 
-EA_MAE <- data.frame(MAE_ref$MAE_ref,MAE_test$MAE_test)
-colnames(EA_MAE) <- c("ictac","fit")
+df_R2$metrics  <- "R2"
+df_MAE$metrics  <- "MAE"
+df_RMSE$metrics  <- "RMSE"
 
-EA_RMSE <- data.frame(RMSE_ref$RMSE_ref,RMSE_test$RMSE_test)
-colnames(EA_RMSE) <- c("ictac","fit")
+df_met <- rbind(df_R2,df_MAE,df_RMSE)
+return(df_met)
 
-mylist <-list("EA_R2"    =  EA_R2,
-			  "EA_RMSE"  =  EA_RMSE,
-			  "EA_MAE"   =  EA_MAE)
 }
 
-wrapApprox <- function(x,y,xout,...){yout <-approx(x,y,xout,...)
-									 return(yout$y)}
-
-prepMatPlot <- function(out,amin=0.05,amax=0.95){
-
-dat_gt             <- out$dat_gt
-dat_gt             <- dat_gt[,c("id_cycle","id"):=NULL]
-dat_gt$set         <- "gt"
-
-dat_ictac          <- out$dat_ictac
-dat_ictac          <- dat_ictac[,c("id_cycle","id"):=NULL]
-dat_ictac$set      <- "ictac"
-
-dat_fit            <- out$dat_fit
-dat_fit$set        <- "fit"
-
-allsets  <- rbind(dat_gt,dat_ictac,dat_fit)
-allsets_sel <- subset(allsets, (a >=amin & a <=amax))
-
-sel_col_gt <- c("temperature.s","a","rate","fi", "heat.flow","dadT","dadt","fa","fan")
-dt_gt_sel <- dat_gt[,..sel_col_gt]
-dt_gt_sel$set <- "ground_truth"
-
-selected_col <- c("fi", "heat.flow","dadT","dadt","fa","fan")
-dat_ictac_res <- dat_ictac[,..selected_col]
-lictac_res <- lapply(seq(1,length(selected_col)), function(x){wrapApprox(dat_ictac$a,dat_ictac_res[[x]],xout=dat_gt$a)})
-names(lictac_res) <- selected_col
-dat_ictac_resampled <- data.table((sapply(lictac_res,c)))
-dt_ictac_res <- data.table(dat_gt$temperature.s,dat_gt$a,dat_gt$rate,dat_ictac_resampled)
-colnames(dt_ictac_res) <- c("temperature.s","a","rate","fi", "heat.flow","dadT","dadt","fa","fan")
-dt_ictac_res$set <- "ictac"
-
-dat_fit_res <- dat_fit[,..selected_col]
-lfit_res <- lapply(seq(1,length(selected_col)), function(x){wrapApprox(dat_fit$a,dat_fit_res[[x]],xout=dat_gt$a)})
-names(lfit_res) <- selected_col
-dt_fit_resampled <- data.table((sapply(lfit_res,c)))
-dt_fit_res <- data.table(dat_gt$temperature.s,dat_gt$a,dat_gt$rate,dt_fit_resampled)
-colnames(dt_fit_res) <- c("temperature.s","a","rate","fi", "heat.flow","dadT","dadt","fa","fan")
-dt_fit_res$set <- "fit"
-
-dt_gt_sel$dfi <- dt_gt_sel$fi - dt_gt_sel$fi
-dt_gt_sel$dfa <- dt_gt_sel$fa - dt_gt_sel$fa
-dt_gt_sel$dfan <- dt_gt_sel$fan - dt_gt_sel$fan
-dt_gt_sel$dheat.flow <- dt_gt_sel$heat.flow - dt_gt_sel$heat.flow
-dt_gt_sel$ddadt <- dt_gt_sel$dadt - dt_gt_sel$dadt
-dt_gt_sel$ddadT <- dt_gt_sel$dadT - dt_gt_sel$dadT
-
-dt_ictac_res$dfi  <- dt_ictac_res$fi - dt_gt_sel$fi
-dt_ictac_res$dfa  <- dt_ictac_res$fa - dt_gt_sel$fa
-dt_ictac_res$dfan <- dt_ictac_res$fan - dt_gt_sel$fan
-dt_ictac_res$dheat.flow  <- dt_ictac_res$heat.flow - dt_gt_sel$heat.flow
-dt_ictac_res$ddadt  <- dt_ictac_res$dadt - dt_gt_sel$dadt
-dt_ictac_res$ddadT  <- dt_ictac_res$dadT - dt_gt_sel$dadT
-
-dt_fit_res$dfi  <- dt_fit_res$fi - dt_gt_sel$fi
-dt_fit_res$dfa  <- dt_fit_res$fa - dt_gt_sel$fa
-dt_fit_res$dfan <- dt_fit_res$fan - dt_gt_sel$fan
-dt_fit_res$dheat.flow  <- dt_fit_res$heat.flow - dt_gt_sel$heat.flow
-dt_fit_res$ddadt  <- dt_fit_res$dadt - dt_gt_sel$dadt
-dt_fit_res$ddadT  <- dt_fit_res$dadT - dt_gt_sel$dadT
-
-allsets_res <- rbind(dt_gt_sel,dt_ictac_res,dt_fit_res)
-allsets_res_sel <- subset(allsets_res, (a >=amin & a <=amax))
-mylist <- list("allsets"=allsets,
-			   "allsets_sel"=allsets_sel,
-			   "allsets_res"=allsets_res,
-			   "allsets_res_sel"=allsets_res_sel)
-
-return(mylist)
-}
+# wrapApprox <- function(x,y,xout,...){yout <-approx(x,y,xout,...)
+									 # return(yout$y)}
 
 #++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°
 # PLOT 
 #++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°
 
-ploMat <- function(outPrepMat){
 
-allsets_sel     <- outPrepMat$allsets_sel
-allsets_res_sel <- outPrepMat$allsets_res_sel
 
-myncols <- length(unique(allsets_sel$rate))
 
-pfa  <- ggplot(data=allsets_sel,aes(col = as.factor(set)))  +   geom_line(aes(a, fa)) +   facet_wrap(~ rate, scale = 'free_x', ncol = myncols)
-pfan  <- ggplot(data=allsets_sel,aes(col = as.factor(set)))  +   geom_line(aes(a, fan)) +   facet_wrap(~ rate, scale = 'free_x', ncol = myncols)
-pheat  <- ggplot(data=allsets_sel,aes(col = as.factor(set)))  +   geom_line(aes(temperature.s, heat.flow)) +   facet_wrap(~ rate, scale = 'free_x', ncol = myncols)
+pepper <- function(outreg,nameset="newset"){
+outreg_EA     <- outreg$EA
+outreg_EA_gt     <-  outreg$EA_gt
+outreg_EA_ictac  <-  outreg$EA_ictac
+outreg_EA$reg    <- "new_reg"
+outreg_EA_gt$reg <- "ground_truth"
+outreg_EA_ictac$reg <- "ictac"
+outreg_E  <- rbind(outreg_EA_gt,outreg_EA_ictac,outreg_EA)
+outreg_E$set <- nameset
 
-prfa  <- ggplot(data=allsets_res_sel,aes(col = as.factor(set)))  +   geom_line(aes(a, fa)) +   facet_wrap(~ rate, scale = 'free_x', ncol = myncols)
-prfan  <- ggplot(data=allsets_res_sel,aes(col = as.factor(set)))  +   geom_line(aes(a, fan)) +   facet_wrap(~ rate, scale = 'free_x', ncol = myncols)
-prheat  <- ggplot(data=allsets_res_sel,aes(col = as.factor(set)))  +   geom_line(aes(temperature.s, heat.flow)) +   facet_wrap(~ rate, scale = 'free_x', ncol = myncols)
+outreg_E_melt <- melt(outreg_E,id.vars=c("degree","reg","set"))
 
-prdfa  <- ggplot(data=allsets_res_sel,aes(col = as.factor(set)))  +   geom_line(aes(a, dfa)) +   facet_wrap(~ rate, scale = 'free_x', ncol = myncols)
-prdfan  <- ggplot(data=allsets_res_sel,aes(col = as.factor(set)))  +   geom_line(aes(a, dfan)) +   facet_wrap(~ rate, scale = 'free_x', ncol = myncols)
-prdheat  <- ggplot(data=allsets_res_sel,aes(col = as.factor(set)))  +   geom_line(aes(temperature.s, dheat.flow)) +   facet_wrap(~ rate, scale = 'free_x', ncol = myncols)
+metrics_ictac         <- fitEA(outreg_EA_gt,outreg_EA_ictac)
+metrics_new_reg       <- fitEA(outreg_EA_gt,outreg_EA)
+metrics_ictac$reg     <- "ictac"
+metrics_new_reg$reg   <- "new_reg"
+outreg_metrics        <- rbind(metrics_ictac,metrics_new_reg)
+outreg_metrics$set    <- nameset
 
-mylist <-list( "pfa"    =  pfa    ,
-			   "pfan"   =  pfan   ,
-			   "pheat"  =  pheat  ,
-			   "prfa"   =  prfa   ,
-			   "prfan"  =  prfan  ,
-			   "prheat" =  prheat ,
-			   "prdfa"  =  prdfa  ,
-			   "prdfan"  = prdfan ,
-			   "prdheat" = prdheat)
-   
+outreg_gt           <-  outreg$gt$dat_gt
+outreg_gt$id        <- outreg_gt$id_cycle
+outreg_ictac        <-  outreg$ictac$dat
+outreg_new_set      <-  outreg$new_set$dat
+outreg_gt$reg       <- "ground_truth"
+outreg_ictac$reg    <- "ictac"
+outreg_new_set$reg  <- "new_reg"
+out <- rbind(outreg_gt,outreg_ictac,outreg_new_set)
+
+
+pE <- ggplot(outreg_E_melt, aes(col = reg)) +   geom_line(aes(degree, value)) +   facet_wrap(~ variable, scale = 'free_x', ncol = 4)
+pmetrics <- ggplot(outreg_metrics, aes(col = reg)) +   geom_point(aes(metrics, value)) +   facet_wrap(~ method, scale = 'free_x', ncol = 4)
+pheat <- ggplot(out, aes(col = reg)) +   geom_line(aes(temperature.s, heat.flow)) +   facet_wrap(~ rate, scale = 'free_x', ncol = 7)
+pfa   <- ggplot(out, aes(col = reg)) +   geom_line(aes(ri, fa)) +   facet_wrap(~ rate, scale = 'free_x', ncol = 7)
+mylist <- list("E"=outreg_E, "E_melt"=outreg_E_melt,"metrics"=outreg_metrics,"dat"=out,"pE"=pE,"pheat"=pheat,"pfa"=pfa,"pmetrics"=pmetrics)
 return(mylist)
-}
-
-ploEA <- function(out){
-
-EA_gt    <- out$EA_gt$EA
-EA_ictac <- out$EA_ictac$EA
-EA       <- out$EA$EA
-EA_gt$set    <- "ground_truth"
-EA_ictac$set <- "ictac"
-EA$set       <- "fit"
-
-EA_gt$DFriedman   <- EA_gt$Friedman - EA_gt$Friedman 
-EA_gt$DStarink    <- EA_gt$Starink -EA_gt$Starink
-EA_gt$DKAS        <- EA_gt$KAS - EA_gt$KAS
-EA_gt$DKissinger  <- EA_gt$Kissinger - EA_gt$Kissinger
-
-EA_ictac$DFriedman   <- EA_ictac$Friedman - EA_gt$Friedman 
-EA_ictac$DStarink    <- EA_ictac$Starink -EA_gt$Starink
-EA_ictac$DKAS        <- EA_ictac$KAS - EA_gt$KAS
-EA_ictac$DKissinger  <- EA_ictac$Kissinger - EA_gt$Kissinger
-
-EA$DFriedman <- EA_gt$Friedman - EA$Friedman 
-EA$DStarink  <- EA_gt$Starink -EA$Starink
-EA$DKAS      <- EA_gt$KAS - EA$KAS
-EA$DKissinger  <- EA_gt$Kissinger - EA$Kissinger
-
-allset <- rbind(EA_gt,EA_ictac,EA)
-
-# plot
-pFri       <- ggplot(data=allset,aes(degree, Friedman, col = as.factor(set), group = as.factor(set)), alpha = 0.5)  +   geom_line() +   theme_bw(base_size = 12)
-pS         <- ggplot(data=allset,aes(degree, Starink, col = as.factor(set), group = as.factor(set)), alpha = 0.5)  +   geom_line() +   theme_bw(base_size = 12)
-pKAS       <- ggplot(data=allset,aes(degree, KAS, col = as.factor(set), group = as.factor(set)), alpha = 0.5)  +   geom_line() +   theme_bw(base_size = 12)
-pKissinger <- ggplot(data=allset,aes(degree, Kissinger, col = as.factor(set), group = as.factor(set)), alpha = 0.5)  +   geom_line() +   theme_bw(base_size = 12)
-
-pDFri       <- ggplot(data=allset,aes(degree, DFriedman, col = as.factor(set), group = as.factor(set)), alpha = 0.5)  +   geom_line() +   theme_bw(base_size = 12)
-pDS         <- ggplot(data=allset,aes(degree, DStarink, col = as.factor(set), group = as.factor(set)), alpha = 0.5)  +   geom_line() +   theme_bw(base_size = 12)
-pDKAS       <- ggplot(data=allset,aes(degree, DKAS, col = as.factor(set), group = as.factor(set)), alpha = 0.5)  +   geom_line() +   theme_bw(base_size = 12)
-pDKissinger <- ggplot(data=allset,aes(degree, DKissinger, col = as.factor(set), group = as.factor(set)), alpha = 0.5)  +   geom_line() +   theme_bw(base_size = 12)
-
-
-mylist <-list("pFri"   =  pFri,
-			  "pS"     =  pS,
-			  "pKAS"   =  pKAS,
-			  "pKissinger" = pKissinger,
-			  "pDFri"   =  pDFri,
-			  "pDS"     =  pDS,
-			  "pDKAS"   =  pDKAS,
-			  "pDKissinger" = pDKissinger)
-return(mylist)
-}
-
-plotMet <- function(out){
-
-out$EA_R2$method <- c("Friedman","Starink","KAS")
-out$EA_R2$metric <- "R2"
-
-out$EA_RMSE$method <- c("Friedman","Starink","KAS")
-out$EA_RMSE$metric <- "RMSE"
-
-out$EA_MAE$method <- c("Friedman","Starink","KAS")
-out$EA_MAE$metric <- "MAE"
-
-out <- rbindlist(out) 
-out$set <- "free"
-
-out.melt <- melt(out,id.vars=c("method","metric","set"))
-p <- ggplot(out.melt, aes(col = as.factor(variable))) +   geom_point(aes(method, value)) +   facet_wrap(~ metric, scale = 'free_x', ncol = 4)
-mylist = list("p"=p,"dt.out"=out,"dt.out.melt"=out.melt)
 }
 
 plotCoeff <- function(out){
 
 params <- out$params
 preds  <- out$preds
-
 p <- ggplot(params, aes(col = as.factor(rate))) +   geom_point(aes(rate, estimate)) +
       facet_wrap(~ term, scale = 'free_x', ncol = 4) +   geom_linerange(aes(rate, ymin = conf.low, ymax = conf.high)) +
       coord_flip() +   theme(legend.position = 'top') +   xlab('curve') +   ylab('parameter estimate')
@@ -809,62 +776,16 @@ return(mylist)
 }
 
 #++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°
-# XLS 
+# functions to export XLS 
 #++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°+++++++++°
 
-#createWorkbook(wb)
-#addWorksheet(wb,namesheet)
-xlsEA <-  function(wb, namesheet,setlab="set1", out, space=5,startpos=1) {
+#write metric mat
+#writeData(wb,namesheet,df_met,startCol =1 , startRow = 1)
 
-#negStyle <- createStyle(fontColour = "#9C0006", bgFill = "#FFC7CE")
-#posStyle <- createStyle(fontColour = "#006100", bgFill = "#C6EFCE")
-
-EA_R2    <- out$EA_R2
-EA_RMSE  <- out$EA_RMSE
-EA_MAE   <- out$EA_MAE
-
-labset <- data.frame(setlab)
-label_EA_R2    <- data.frame("EA_R2")
-label_EA_RMSE  <- data.frame("EA_RMSE")
-label_EA_MAE   <- data.frame("EA_MAE")
-
-ix1 <- dim(EA_R2 )[1]  + space
-ix2 <- dim(EA_RMSE)[1] + space
-ix3 <- dim(EA_MAE)[1]   + space
-
-#EA_R2
-writeData(wb,namesheet,labset, startCol=1, startRow = startpos+1)
-writeData(wb,namesheet,EA_R2,       startCol=1, startRow = startpos+5)
-
-#EA_RMSE
-writeData(wb,namesheet,EA_RMSE,       startCol =1 , startRow = startpos+1+ix1+2)
-
-#EA_MAE
-writeData(wb,namesheet,EA_MAE,      startCol =1,  startRow=startpos+1+ix1+ix2+2)
-
-}
-
-xlsDumpDAT <-  function(wb, res ,nameset="myset",space=5) {
-
-fit  = res$dat_fit
-ictac = res$dat_ictac
-gt    = res$dat_gt
-colnames(fit)[colnames(fit) == 'dadT'] <- 'dadTemperature'
-colnames(gt)[colnames(gt) == 'dadT'] <- 'dadTemperature'
-colnames(ictac)[colnames(ictac) == 'dadT'] <- 'dadTemperature'
-fitsheet <- paste0(nameset,"fit")
-ictacsheet <- paste0(nameset,"ictac")
-gtsheet <- paste0(nameset,"ground_truth")
-addWorksheet(wb,fitsheet)
-addWorksheet(wb,ictacsheet)
-addWorksheet(wb,gtsheet)
-#set_fit
-writeData(wb,fitsheet,fit,startRow=3,startCol=1)
-#set_ictac
-writeData(wb,ictacsheet,ictac,startRow=3,startCol=1)
-#set_gt
-writeData(wb,gtsheet,gt,startRow=3,startCol=1)
-
+xlsDumpDAT <-  function(wb, dat ,nameset="myset",namereg="namereg",space=5) {
+colnames(dat)[colnames(fit) == 'dadT'] <- 'dadTemperature'
+regsheet <- paste0(nameset,namereg)
+addWorksheet(wb,regsheet)
 }
 
 xlsCoeff <-  function(wb, namesheet, output,space=5,startpos=1) {
@@ -883,4 +804,3 @@ colnames(mat)[colnames(mat) == 'dadT'] <- 'dadTemperature'
 #set_fit
 writeData(wb,fitsheet,fit,startRow=1,startCol=1)
 }
-
